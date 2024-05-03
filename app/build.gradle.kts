@@ -54,4 +54,7 @@ dependencies {
     implementation ("com.google.mlkit:image-labeling:17.0.8")
     implementation ("com.google.android.gms:play-services-mlkit-image-labeling:16.0.8")
 
+    implementation ("com.google.android.gms:play-services-base:18.3.0")
+    implementation ("com.google.android.gms:play-services-tflite-java:16.2.0-beta02")
+
 }

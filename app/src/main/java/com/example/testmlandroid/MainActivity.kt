@@ -38,7 +38,7 @@ class MainActivity : AppCompatActivity() {
     private val READ_MEDIA_IMAGE_PERMISSION_CODE = 113
     private val WRITE_STORAGE_PERMISSION_CODE = 113
 
-    private val TAG="MyTag"
+    private val TAG="Mi ML"
 
     private lateinit var cameraLauncher: ActivityResultLauncher<Intent>
     private lateinit var galleryLauncher: ActivityResultLauncher<Intent>
@@ -54,40 +54,36 @@ class MainActivity : AppCompatActivity() {
         tvResult = findViewById(R.id.tvresult)
         btnChoosePicture = findViewById(R.id.btnChoosePicture)
 
-        imagelabeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
+        //me permite variar el porcentaje de confianza del etiquetado
+        //en este caso que solo me acepte el porcentaje superior al 80%
+        val options = ImageLabelerOptions.Builder()
+            .setConfidenceThreshold(0.8f)
+            .build()
 
-        cameraLauncher=registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult(),
-            object : ActivityResultCallback<ActivityResult>{
-                override fun onActivityResult(result: ActivityResult) {
-                    val data = result?.data
-                    try {
-                        val photo = data?.extras?.get("data") as Bitmap
-                        ivPicture.setImageBitmap(photo)
-                        inputImage = InputImage.fromBitmap(photo, 0)
-                        processImage()
-                    } catch (e: Exception) {
-                        Log.d(TAG, "onActivityResult: ${e.message}")
-                    }
-                }
+        imagelabeler = ImageLabeling.getClient(options)
+
+        cameraLauncher=registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result?.data
+            try {
+                val photo = data?.extras?.get("data") as Bitmap
+                ivPicture.setImageBitmap(photo)
+                inputImage = InputImage.fromBitmap(photo, 0)
+                processImage()
+            } catch (e: Exception) {
+                Log.d(TAG, "onActivityResult: ${e.message}")
             }
-        )
+        }
 
-        galleryLauncher=registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult(),
-            object : ActivityResultCallback<ActivityResult>{
-                override fun onActivityResult(result: ActivityResult) {
-                    val data = result.data
-                    try {
-                        inputImage = InputImage.fromFilePath(this@MainActivity, data?.data!!)
-                        ivPicture.setImageURI(data?.data)
-                        processImage()
-                    } catch (e: Exception) {
+        galleryLauncher=registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            try {
+                inputImage = InputImage.fromFilePath(this@MainActivity, data?.data!!)
+                ivPicture.setImageURI(data?.data)
+                processImage()
+            } catch (e: Exception) {
 
-                    }
-                }
             }
-        )
+        }
 
         btnChoosePicture.setOnClickListener {
             val options = arrayOf("Camara", "Galeria")
@@ -115,7 +111,7 @@ class MainActivity : AppCompatActivity() {
             .addOnSuccessListener {
                 var result = ""
                 for (label in it) {
-                    result = result + "\n"+ label.text + " "
+                    result = result + "\n"+ label.text + " -> " + label.confidence * 100 + "%"
                 }
                 tvResult.text = result
             }.addOnFailureListener {
