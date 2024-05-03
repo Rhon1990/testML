@@ -9,121 +9,156 @@ import androidx.core.content.ContextCompat
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.YuvImage
 import android.provider.MediaStore
 import android.util.Log
+import android.widget.Button
+import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.ActivityResultCallback
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.activity.result.contract.ActivityResultContracts
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.label.ImageLabeler
+import com.google.mlkit.vision.label.ImageLabeling
+import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
+import java.lang.Exception
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var imageView: ImageView
-    private val imagePickCode = 1000
-    private val imageCaptureCode = 1001
+    private lateinit var ivPicture: ImageView
+    private lateinit var tvResult: TextView
+    private lateinit var btnChoosePicture: Button
 
+    private val CAMERA_PERMISSION_CODE = 123
+    private val READ_MEDIA_IMAGE_PERMISSION_CODE = 113
+    private val WRITE_STORAGE_PERMISSION_CODE = 113
+
+    private val TAG="MyTag"
+
+    private lateinit var cameraLauncher: ActivityResultLauncher<Intent>
+    private lateinit var galleryLauncher: ActivityResultLauncher<Intent>
+
+    private lateinit var inputImage: InputImage
+
+    private lateinit var imagelabeler: ImageLabeler
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        imageView = findViewById(R.id.imageView)
-        imageView.setOnClickListener {
-            val options = arrayOf("Usar Galería", "Tomar Foto")
-            AlertDialog.Builder(this)
-                .setTitle("Seleccionar Acción")
-                .setItems(options) { dialog, which ->
-                    when (which) {
-                        0 -> checkGalleryPermissions()
-                        1 -> checkCameraPermissions()
+        ivPicture = findViewById(R.id.ivPicture)
+        tvResult = findViewById(R.id.tvresult)
+        btnChoosePicture = findViewById(R.id.btnChoosePicture)
+
+        imagelabeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
+
+        cameraLauncher=registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+            object : ActivityResultCallback<ActivityResult>{
+                override fun onActivityResult(result: ActivityResult) {
+                    val data = result?.data
+                    try {
+                        val photo = data?.extras?.get("data") as Bitmap
+                        ivPicture.setImageBitmap(photo)
+                        inputImage = InputImage.fromBitmap(photo, 0)
+                        processImage()
+                    } catch (e: Exception) {
+                        Log.d(TAG, "onActivityResult: ${e.message}")
                     }
                 }
-                .show()
-        }
-    }
-    private fun checkGalleryPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES)
-            == PackageManager.PERMISSION_GRANTED) {
-            openGallery()
-        } else {
-            requestStoragePermission()
-        }
-    }
-
-    private fun checkCameraPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            == PackageManager.PERMISSION_GRANTED) {
-            takePicture()
-        } else {
-            requestCameraPermission()
-        }
-    }
-
-    private fun requestStoragePermission() {
-        ActivityCompat.requestPermissions(this,
-            arrayOf(Manifest.permission.READ_MEDIA_IMAGES),
-            imagePickCode)  // imagePickCode es un valor constante que define el código de solicitud del permiso de cámara
-    }
-
-    private fun requestCameraPermission() {
-        ActivityCompat.requestPermissions(this,
-            arrayOf(Manifest.permission.CAMERA),
-            imageCaptureCode)  // cameraPermissionCode es un valor constante que define el código de solicitud del permiso de cámara
-    }
-    //permisos para leer
-    private fun showExplanationDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Permiso Requerido")
-            .setMessage("Necesitamos acceso al almacenamiento para cargar imágenes desde la galería.")
-            .setPositiveButton("OK") { dialog, which ->
-                // Solicitar el permiso después de que el usuario entienda por qué es necesario
-                requestStoragePermission()
             }
-            .setNegativeButton("Cancelar") { dialog, which ->
-                dialog.dismiss()
+        )
+
+        galleryLauncher=registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+            object : ActivityResultCallback<ActivityResult>{
+                override fun onActivityResult(result: ActivityResult) {
+                    val data = result.data
+                    try {
+                        inputImage = InputImage.fromFilePath(this@MainActivity, data?.data!!)
+                        ivPicture.setImageURI(data?.data)
+                        processImage()
+                    } catch (e: Exception) {
+
+                    }
+                }
             }
-            .create()
-            .show()
+        )
+
+        btnChoosePicture.setOnClickListener {
+            val options = arrayOf("Camara", "Galeria")
+            val builder = AlertDialog.Builder(this)
+            builder.setTitle("Seleccione una opción")
+
+            builder.setItems(options, DialogInterface.OnClickListener{
+                dialog, which ->
+                if(which==0){
+                    val cameraIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                    cameraLauncher.launch(cameraIntent)
+                }else{
+                    val storageIntent = Intent()
+                    storageIntent.setType("image/*")
+                    storageIntent.setAction(Intent.ACTION_GET_CONTENT)
+                    galleryLauncher.launch(storageIntent)
+                }
+            })
+            builder.show()
+        }
     }
 
+    private fun processImage() {
+        imagelabeler.process(inputImage)
+            .addOnSuccessListener {
+                var result = ""
+                for (label in it) {
+                    result = result + "\n"+ label.text + " "
+                }
+                tvResult.text = result
+            }.addOnFailureListener {
+                Log.d(TAG, "procesando Imagen: ${it.message}")
+            }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkPermission(Manifest.permission.CAMERA, CAMERA_PERMISSION_CODE)
+    }
+
+    private fun checkPermission(permission: String, requestCode: Int) {
+        if (ContextCompat.checkSelfPermission(this, permission)
+            == PackageManager.PERMISSION_DENIED) {
+           ActivityCompat.requestPermissions(this, arrayOf(permission), requestCode)
+        }
+    }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        Log.d("Permissions", "requestCode: $requestCode, grantResults: ${grantResults.joinToString()}")
-        if (requestCode == imagePickCode) {
+
+        if (requestCode == CAMERA_PERMISSION_CODE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Permiso concedido
-                openGallery()
+                checkPermission(Manifest.permission.CAMERA, CAMERA_PERMISSION_CODE)
             } else {
                 // Permiso denegado
-                Toast.makeText(this, "Permisos denegado", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "CAMARA Permisos denegado", Toast.LENGTH_SHORT).show()
             }
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        when {
-            resultCode == Activity.RESULT_OK && requestCode == imagePickCode -> {
-                val imageUri = data?.data  // Obtener la URI de la imagen
-                imageView.setImageURI(imageUri)  // Mostrar la imagen seleccionada en el ImageView
+        } else if(requestCode == READ_MEDIA_IMAGE_PERMISSION_CODE){
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                checkPermission(Manifest.permission.READ_MEDIA_IMAGES, READ_MEDIA_IMAGE_PERMISSION_CODE)
+            } else {
+                // Permiso denegado
+                Toast.makeText(this, "GALERIA Permisos denegado", Toast.LENGTH_SHORT).show()
             }
-            resultCode == Activity.RESULT_OK && requestCode == imageCaptureCode -> {
-                val imageBitmap = data?.extras?.get("data") as Bitmap
-                imageView.setImageBitmap(imageBitmap)  // Mostrar la imagen de la cámara en el ImageView
+        } else if(requestCode == WRITE_STORAGE_PERMISSION_CODE){
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                checkPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE, WRITE_STORAGE_PERMISSION_CODE)
+            } else {
+                // Permiso denegado
+                Toast.makeText(this, "ESCRIBIR Permisos denegado", Toast.LENGTH_SHORT).show()
             }
-        }
-    }
-    private fun openGallery() {
-        val intent = Intent(Intent.ACTION_PICK)
-        intent.type = "image/*"
-        startActivityForResult(intent, imagePickCode)
-    }
-
-    private fun takePicture(){
-        val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        if (takePictureIntent.resolveActivity(packageManager) != null) {
-            startActivityForResult(takePictureIntent, imageCaptureCode)
-        } else {
-            Toast.makeText(this, "No se encontró una aplicación de cámara", Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -52,5 +52,6 @@ dependencies {
 
     //ML ETIQUETADO DE IMAGENES
     implementation ("com.google.mlkit:image-labeling:17.0.8")
+    implementation ("com.google.android.gms:play-services-mlkit-image-labeling:16.0.8")
 
 }
